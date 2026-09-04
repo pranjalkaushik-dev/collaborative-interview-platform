@@ -5,11 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
-  },
+  "build": "tsc",
+  "dev": "tsx src/index.ts",
+  "start": "node dist/index.js",
+  "typecheck": "tsc --noEmit",
+  "test": "vitest run"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",

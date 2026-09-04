@@ -9,6 +9,6 @@ if (!apiKey) {
 
 export const llm = new ChatGoogleGenerativeAI({
   apiKey,
-  model: "gemini-3.5-flash-lite",
+  model: "gemini-3.6-flash",
   temperature: 0.2,
 });
