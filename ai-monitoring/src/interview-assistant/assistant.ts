@@ -17,18 +17,15 @@ export async function generateInterviewAssistantResponse(
     throw new Error("Candidate answer must not be empty");
   }
 
-  const result = await withRetry(async () => {
-    return interviewAssistantChain.invoke({
+  const result = await withRetry(() =>
+    interviewAssistantChain.invoke({
       interviewType: request.interviewType,
       difficulty: request.difficulty,
       currentQuestion: request.currentQuestion,
       candidateAnswer: request.candidateAnswer,
       previousTurns: JSON.stringify(request.previousTurns),
-    });
-  });
+    })
+  );
 
-  const validatedResult =
-    interviewAssistantSchema.parse(result);
-
-  return validatedResult;
+  return interviewAssistantSchema.parse(result);
 }

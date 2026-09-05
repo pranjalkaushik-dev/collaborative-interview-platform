@@ -5,12 +5,13 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-  "build": "tsc",
-  "dev": "tsx src/index.ts",
-  "start": "node dist/index.js",
-  "typecheck": "tsc --noEmit",
-  "test": "vitest run"
-},
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "vite"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -18,13 +19,19 @@
     "@google/genai": "^2.21.0",
     "@langchain/core": "^1.2.9",
     "@langchain/google-genai": "^2.3.0",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "dotenv": "^17.4.2",
+    "qrcode": "^1.5.4",
+    "socket.io-client": "^4.8.3",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
+    "@types/qrcode": "^1.5.6",
+    "jsdom": "^29.1.1",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^5.0.0"
   }
 }
