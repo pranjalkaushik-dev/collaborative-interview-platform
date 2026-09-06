@@ -5,10 +5,14 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const errorHandler = require('./shared/middlewares/error.middleware');
+const { verifyToken } = require('./shared/utils/jwt.utils');
+const User = require('./modules/auth/auth.model');
+const ViolationLog = require('./modules/monitoring/violation.model');
 
 // Routes
 const authRoutes = require('./modules/auth/auth.routes');
 const interviewRoutes = require('./modules/interviews/interview.routes');
+const monitoringRoutes = require('./modules/monitoring/monitoring.routes');
 
 dotenv.config();
 
@@ -40,9 +44,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Mount Routes
+// Mount REST Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/interviews', interviewRoutes);
+app.use('/api/monitoring', monitoringRoutes);
 
 // Socket.IO Setup
 const io = new Server(server, {
@@ -52,26 +57,136 @@ const io = new Server(server, {
   }
 });
 
-// Socket.IO Events
-io.on('connection', (socket) => {
-  console.log(`[Socket.IO] New Client Connected: ${socket.id}`);
+// Socket.IO Authentication Middleware (Secures all socket events)
+io.use(async (socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(' ')[1];
 
-  // Join Interview Room
-  socket.on('join-room', ({ roomId, userName }) => {
+    if (!token) {
+      // Allow unauthenticated for anonymous dual-camera pairing with short-lived pairingToken
+      if (socket.handshake.auth?.pairingToken) {
+        const decoded = verifyToken(socket.handshake.auth.pairingToken);
+        socket.user = { _id: decoded.candidateId, role: 'SECONDARY_CAM' };
+        socket.isDualCam = true;
+        return next();
+      }
+      return next(new Error('Authentication error: Missing token'));
+    }
+
+    const decoded = verifyToken(token);
+    const user = await User.findById(decoded.id).select('-passwordHash');
+    if (!user || !user.isActive) {
+      return next(new Error('Authentication error: Invalid or deactivated user'));
+    }
+
+    socket.user = user;
+    next();
+  } catch (err) {
+    next(new Error('Authentication error: Token validation failed'));
+  }
+});
+
+// Socket.IO Gateway & Event Handlers
+io.on('connection', (socket) => {
+  console.log(`[Socket.IO] Connected User: ${socket.user?.fullName || 'SecondaryCam'} (${socket.id})`);
+
+  // 1. Join Interview Room
+  socket.on('join-room', ({ roomId }) => {
     socket.join(roomId);
-    console.log(`[Socket.IO] User ${userName} (${socket.id}) joined room: ${roomId}`);
-    socket.to(roomId).emit('user-joined', { socketId: socket.id, userName });
+    console.log(`[Socket.IO] ${socket.user?.fullName} (${socket.id}) joined room: ${roomId}`);
+    socket.to(roomId).emit('user-joined', {
+      socketId: socket.id,
+      userId: socket.user?._id,
+      userName: socket.user?.fullName,
+      role: socket.user?.accountRole || 'SECONDARY_CAM'
+    });
   });
 
-  // Code Synchronization (Nitesh's module)
+  // 2. Code Synchronization (Nitesh's module)
   socket.on('code-change', ({ roomId, code }) => {
     socket.to(roomId).emit('code-update', { code });
   });
 
-  // Monitoring Violations (Rishav's module)
-  socket.on('monitoring:violation', ({ roomId, candidateId, violationType }) => {
-    console.warn(`[Violation Warning] Room ${roomId}: Candidate ${candidateId} - ${violationType}`);
-    io.to(roomId).emit('violation-alert', { candidateId, violationType, timestamp: Date.now() });
+  // 3. SECURE CV & Monitoring Violations (Rishav's module)
+  // Extracts candidateId directly from authenticated socket.user._id (Never trusts raw client candidateId)
+  socket.on('monitoring:violation', async ({ interviewId, violationType, metadata, severity }) => {
+    try {
+      const candidateId = socket.user._id;
+
+      // Persist violation log into MongoDB violationLogs collection
+      const violationLog = await ViolationLog.create({
+        interviewId,
+        candidateId,
+        violationType,
+        metadata: metadata || {},
+        severity: severity || 'MEDIUM'
+      });
+
+      // Count total violations for candidate
+      const totalViolations = await ViolationLog.countDocuments({
+        interviewId,
+        candidateId
+      });
+
+      console.warn(
+        `[CV Violation Persisted] Room ${interviewId}: Candidate ${socket.user.fullName} - ${violationType} (Total: ${totalViolations})`
+      );
+
+      // Broadcast alert to room / interviewer
+      io.to(interviewId).emit('violation-alert', {
+        logId: violationLog._id,
+        candidateId,
+        candidateName: socket.user.fullName,
+        violationType,
+        metadata,
+        severity: violationLog.severity,
+        totalViolations,
+        timestamp: violationLog.timestamp
+      });
+    } catch (err) {
+      console.error('[Socket Violation Error]:', err.message);
+      socket.emit('error-event', { message: 'Failed to record violation log' });
+    }
+  });
+
+  // 4. Laptop <-> Phone Dual-Camera WebRTC Signaling (Rishav's module)
+  socket.on('dual-camera:join', ({ interviewId }) => {
+    socket.join(`dual-cam-${interviewId}`);
+    console.log(`[Dual-Cam Socket] Secondary device joined dual-cam-${interviewId}`);
+    socket.to(interviewId).emit('dual-camera:joined', {
+      socketId: socket.id,
+      candidateId: socket.user?._id,
+      deviceType: 'SECONDARY_CAM'
+    });
+  });
+
+  socket.on('dual-camera:offer', ({ interviewId, sdp, targetSocketId }) => {
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('dual-camera:offer', { sdp, senderSocketId: socket.id });
+    } else {
+      socket.to(interviewId).emit('dual-camera:offer', { sdp, senderSocketId: socket.id });
+    }
+  });
+
+  socket.on('dual-camera:answer', ({ interviewId, sdp, targetSocketId }) => {
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('dual-camera:answer', { sdp, senderSocketId: socket.id });
+    } else {
+      socket.to(interviewId).emit('dual-camera:answer', { sdp, senderSocketId: socket.id });
+    }
+  });
+
+  socket.on('dual-camera:ice-candidate', ({ interviewId, candidate, targetSocketId }) => {
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('dual-camera:ice-candidate', { candidate, senderSocketId: socket.id });
+    } else {
+      socket.to(interviewId).emit('dual-camera:ice-candidate', { candidate, senderSocketId: socket.id });
+    }
+  });
+
+  socket.on('dual-camera:leave', ({ interviewId }) => {
+    socket.to(interviewId).emit('dual-camera:left', { socketId: socket.id, reason: 'DEVICE_DISCONNECTED' });
   });
 
   // Disconnect
