@@ -1,9 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { runCode, getSupportedLanguages } = require('./coding.controller');
 
-// Public or authenticated code execution
-router.post('/run', runCode);
+const {
+  runCode,
+  submitCode,
+  getSupportedLanguages
+} = require('./coding.controller');
+
+const authMiddleware = require('../../shared/middlewares/auth.middleware');
+
 router.get('/languages', getSupportedLanguages);
+router.post('/run', runCode);
+router.post('/submit', authMiddleware, submitCode);
 
 module.exports = router;

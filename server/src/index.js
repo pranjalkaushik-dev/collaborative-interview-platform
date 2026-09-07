@@ -70,7 +70,6 @@ io.use(async (socket, next) => {
       socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(' ')[1];
 
     if (!token) {
-      // Allow unauthenticated for anonymous dual-camera pairing with short-lived pairingToken
       if (socket.handshake.auth?.pairingToken) {
         const decoded = verifyToken(socket.handshake.auth.pairingToken);
         socket.user = { _id: decoded.candidateId, role: 'SECONDARY_CAM' };
@@ -161,12 +160,10 @@ io.on('connection', (socket) => {
   });
 
   // 3. SECURE CV & Monitoring Violations (Rishav's module)
-  // Extracts candidateId directly from authenticated socket.user._id (Never trusts raw client candidateId)
   socket.on('monitoring:violation', async ({ interviewId, violationType, metadata, severity }) => {
     try {
       const candidateId = socket.user._id;
 
-      // Persist violation log into MongoDB violationLogs collection
       const violationLog = await ViolationLog.create({
         interviewId,
         candidateId,
@@ -175,7 +172,6 @@ io.on('connection', (socket) => {
         severity: severity || 'MEDIUM'
       });
 
-      // Count total violations for candidate
       const totalViolations = await ViolationLog.countDocuments({
         interviewId,
         candidateId
@@ -185,7 +181,6 @@ io.on('connection', (socket) => {
         `[CV Violation Persisted] Room ${interviewId}: Candidate ${socket.user.fullName} - ${violationType} (Total: ${totalViolations})`
       );
 
-      // Broadcast alert to room / interviewer
       io.to(interviewId).emit('violation-alert', {
         logId: violationLog._id,
         candidateId,
