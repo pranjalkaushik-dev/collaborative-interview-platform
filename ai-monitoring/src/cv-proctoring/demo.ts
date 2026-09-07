@@ -6,6 +6,10 @@ import type {
   CvViolation,
 } from "./types.js";
 
+import type {
+  HeadPoseResult,
+} from "./head-pose.js";
+
 const video =
   document.querySelector<HTMLVideoElement>(
     "#camera",
@@ -19,6 +23,16 @@ const statusElement =
 const faceCountElement =
   document.querySelector<HTMLElement>(
     "#face-count",
+  );
+
+const headPoseElement =
+  document.querySelector<HTMLElement>(
+    "#head-pose",
+  );
+
+const headAnglesElement =
+  document.querySelector<HTMLElement>(
+    "#head-angles",
   );
 
 const startButton =
@@ -40,6 +54,8 @@ if (
   !video ||
   !statusElement ||
   !faceCountElement ||
+  !headPoseElement ||
+  !headAnglesElement ||
   !startButton ||
   !stopButton ||
   !violationsElement
@@ -61,6 +77,9 @@ function formatViolationType(
 
     case "PROHIBITED_OBJECT":
       return "Prohibited object detected";
+
+    case "LOOKING_AWAY":
+      return "Looking away";
 
     default:
       return type;
@@ -101,6 +120,9 @@ function addViolation(
   const detailsElement =
     document.createElement("div");
 
+  detailsElement.className =
+    "violation-details";
+
   if (
     violation.metadata?.objectType
   ) {
@@ -112,6 +134,30 @@ function addViolation(
   ) {
     detailsElement.textContent =
       `Faces detected: ${violation.metadata.faceCount}`;
+  } else if (
+    violation.metadata?.yaw !==
+      undefined ||
+    violation.metadata?.pitch !==
+      undefined
+  ) {
+    const yaw =
+      violation.metadata.yaw !==
+      undefined
+        ? violation.metadata.yaw.toFixed(
+            1,
+          )
+        : "--";
+
+    const pitch =
+      violation.metadata.pitch !==
+      undefined
+        ? violation.metadata.pitch.toFixed(
+            1,
+          )
+        : "--";
+
+    detailsElement.textContent =
+      `Yaw: ${yaw}° | Pitch: ${pitch}°`;
   }
 
   const timeElement =
@@ -144,6 +190,24 @@ function addViolation(
   );
 }
 
+function updateHeadPose(
+  result: HeadPoseResult,
+): void {
+  if (
+    !headPoseElement ||
+    !headAnglesElement
+  ) {
+    return;
+  }
+
+  headPoseElement.textContent =
+    result.status;
+
+  headAnglesElement.textContent =
+    `Yaw: ${result.yaw.toFixed(1)}° | ` +
+    `Pitch: ${result.pitch.toFixed(1)}°`;
+}
+
 const controller =
   new CvProctoringController({
     detectionIntervalMs: 500,
@@ -156,8 +220,16 @@ const controller =
 
     violationPersistenceMs: 2000,
 
+    onHeadPoseDetection: (
+      result: HeadPoseResult,
+    ) => {
+      updateHeadPose(result);
+    },
+
     callbacks: {
-      onDetection: (result) => {
+      onDetection: (
+        result,
+      ) => {
         statusElement.textContent =
           result.status;
 
@@ -165,7 +237,9 @@ const controller =
           `Faces detected: ${result.faceCount}`;
       },
 
-      onViolation: (violation) => {
+      onViolation: (
+        violation,
+      ) => {
         console.warn(
           "CV VIOLATION:",
           violation,
@@ -192,12 +266,22 @@ startButton.addEventListener(
       faceCountElement.textContent =
         "Faces detected: 0";
 
+      headPoseElement.textContent =
+        "--";
+
+      headAnglesElement.textContent =
+        "Yaw: -- | Pitch: --";
+
       await controller.start(
         video,
       );
 
       statusElement.textContent =
         "WAITING_FOR_FACE";
+
+      startButton.disabled = true;
+
+      stopButton.disabled = false;
     } catch (error) {
       console.error(
         "Failed to start CV proctoring:",
@@ -209,6 +293,12 @@ startButton.addEventListener(
 
       faceCountElement.textContent =
         "Faces detected: 0";
+
+      headPoseElement.textContent =
+        "--";
+
+      headAnglesElement.textContent =
+        "Yaw: -- | Pitch: --";
     }
   },
 );
@@ -223,5 +313,15 @@ stopButton.addEventListener(
 
     faceCountElement.textContent =
       "Faces detected: 0";
+
+    headPoseElement.textContent =
+      "--";
+
+    headAnglesElement.textContent =
+      "Yaw: -- | Pitch: --";
+
+    startButton.disabled = false;
+
+    stopButton.disabled = true;
   },
 );

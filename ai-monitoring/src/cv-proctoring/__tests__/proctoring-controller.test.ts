@@ -1,5 +1,4 @@
 import {
-  afterEach,
   beforeEach,
   describe,
   expect,
@@ -12,619 +11,660 @@ import {
 } from "../proctoring-controller.js";
 
 import type {
-  FaceDetectionResult,
+  CvViolation,
 } from "../types.js";
 
-import type {
-  ObjectDetectionResult,
-} from "../object-detector.js";
+/* -------------------------------------------------------------------------- */
+/* Camera mock                                                                */
+/* -------------------------------------------------------------------------- */
 
-const mocks = vi.hoisted(() => ({
-  cameraStart: vi.fn(),
-  cameraAttach: vi.fn(),
-  cameraStop: vi.fn(),
-  cameraIsActive: vi.fn(),
-
-  faceDetectorCreate: vi.fn(),
-  faceDetectorClose: vi.fn(),
-
-  objectDetectorCreate: vi.fn(),
-  objectDetectorClose: vi.fn(),
-
-  faceLoopStart: vi.fn(),
-  faceLoopStop: vi.fn(),
-
-  objectLoopStart: vi.fn(),
-  objectLoopStop: vi.fn(),
-
-  detectProhibitedObjects: vi.fn(),
+const cameraMock = vi.hoisted(() => ({
+  start: vi.fn(async () => undefined),
+  attachToVideo: vi.fn(),
+  stop: vi.fn(),
+  isActive: vi.fn(() => true),
 }));
 
 vi.mock("../camera.js", () => ({
   CvCamera: vi.fn(
     class {
-      start = mocks.cameraStart;
-      attachToVideo = mocks.cameraAttach;
-      stop = mocks.cameraStop;
-      isActive = mocks.cameraIsActive;
+      start = cameraMock.start;
+      attachToVideo = cameraMock.attachToVideo;
+      stop = cameraMock.stop;
+      isActive = cameraMock.isActive;
     },
   ),
 }));
 
+/* -------------------------------------------------------------------------- */
+/* Face detector mock                                                         */
+/* -------------------------------------------------------------------------- */
+
+const faceDetectorMock = vi.hoisted(() => ({
+  detect: vi.fn(() => ({
+    status: "ONE_FACE",
+    faceCount: 1,
+    detectedAt: new Date().toISOString(),
+  })),
+  close: vi.fn(),
+}));
+
+const faceDetectorCreateMock = vi.hoisted(() =>
+  vi.fn(async () => faceDetectorMock),
+);
+
 vi.mock("../face-detector.js", () => ({
   CvFaceDetector: {
-    create: mocks.faceDetectorCreate,
+    create: faceDetectorCreateMock,
   },
+}));
+
+/* -------------------------------------------------------------------------- */
+/* Object detector mock                                                       */
+/* -------------------------------------------------------------------------- */
+
+const objectDetectorMock = vi.hoisted(() => ({
+  detect: vi.fn(() => ({
+    objects: [],
+    detectedAt: new Date().toISOString(),
+  })),
+  close: vi.fn(),
+}));
+
+const objectDetectorCreateMock = vi.hoisted(() =>
+  vi.fn(async () => objectDetectorMock),
+);
+
+vi.mock("../object-detector.js", () => ({
+  CvObjectDetector: {
+    create: objectDetectorCreateMock,
+  },
+}));
+
+/* -------------------------------------------------------------------------- */
+/* Face landmarker mock                                                       */
+/* -------------------------------------------------------------------------- */
+
+const faceLandmarkerMock = vi.hoisted(() => ({
+  detect: vi.fn(() => ({
+    landmarks: [],
+    detectedAt: Date.now(),
+  })),
+  close: vi.fn(),
+}));
+
+const faceLandmarkerCreateMock = vi.hoisted(() =>
+  vi.fn(async () => faceLandmarkerMock),
+);
+
+vi.mock("../face-landmarker.js", () => ({
+  CvFaceLandmarker: {
+    create: faceLandmarkerCreateMock,
+  },
+}));
+
+/* -------------------------------------------------------------------------- */
+/* Face detection loop mock                                                   */
+/* -------------------------------------------------------------------------- */
+
+const faceLoopMock = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
 }));
 
 vi.mock("../detection-loop.js", () => ({
   FaceDetectionLoop: vi.fn(
     class {
-      start = mocks.faceLoopStart;
-      stop = mocks.faceLoopStop;
+      start = faceLoopMock.start;
+      stop = faceLoopMock.stop;
     },
   ),
 }));
 
-vi.mock("../object-detector.js", () => ({
-  CvObjectDetector: {
-    create: mocks.objectDetectorCreate,
-  },
+/* -------------------------------------------------------------------------- */
+/* Object detection loop mock                                                 */
+/* -------------------------------------------------------------------------- */
+
+const objectLoopMock = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
 }));
 
 vi.mock("../object-detection-loop.js", () => ({
   ObjectDetectionLoop: vi.fn(
     class {
-      start = mocks.objectLoopStart;
-      stop = mocks.objectLoopStop;
+      start = objectLoopMock.start;
+      stop = objectLoopMock.stop;
     },
   ),
 }));
 
-vi.mock("../object-rules.js", () => ({
-  detectProhibitedObjects:
-    mocks.detectProhibitedObjects,
+/* -------------------------------------------------------------------------- */
+/* Head pose detection loop mock                                              */
+/* -------------------------------------------------------------------------- */
+
+const headPoseLoopMock = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
 }));
 
-describe(
-  "CvProctoringController",
-  () => {
-    beforeEach(() => {
-      vi.clearAllMocks();
+vi.mock("../head-pose-detection-loop.js", () => ({
+  HeadPoseDetectionLoop: vi.fn(
+    class {
+      start = headPoseLoopMock.start;
+      stop = headPoseLoopMock.stop;
+    },
+  ),
+}));
 
-      mocks.cameraIsActive.mockReturnValue(
-        true,
-      );
+/* -------------------------------------------------------------------------- */
+/* Tests                                                                      */
+/* -------------------------------------------------------------------------- */
 
-      mocks.cameraStart.mockResolvedValue(
-        undefined,
-      );
+describe("CvProctoringController", () => {
+  let controller: CvProctoringController;
+  let video: HTMLVideoElement;
 
-      mocks.faceDetectorCreate.mockResolvedValue(
-        {
-          close:
-            mocks.faceDetectorClose,
-          detect: vi.fn(),
-        },
-      );
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
 
-      mocks.objectDetectorCreate.mockResolvedValue(
-        {
-          close:
-            mocks.objectDetectorClose,
-          detect: vi.fn(),
-        },
-      );
+    cameraMock.start.mockResolvedValue(undefined);
+    cameraMock.isActive.mockReturnValue(true);
 
-      mocks.detectProhibitedObjects.mockImplementation(
-        (objects: Array<{
-          label: string;
-          score: number;
-        }>) =>
-          objects
-            .filter(
-              (object) =>
-                object.label
-                  .toLowerCase() ===
-                "cell phone",
-            )
-            .map(
-              (object) => ({
-                type: "CELL_PHONE",
-                label: object.label,
-                score: object.score,
-              }),
-            ),
-      );
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-      vi.restoreAllMocks();
-    });
-
-    it(
-      "starts camera and both detection pipelines",
-      async () => {
-        const controller =
-          new CvProctoringController();
-
-        const video =
-          document.createElement(
-            "video",
-          );
-
-        await controller.start(
-          video,
-        );
-
-        expect(
-          mocks.cameraStart,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.cameraAttach,
-        ).toHaveBeenCalledWith(
-          video,
-        );
-
-        expect(
-          mocks.faceDetectorCreate,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.objectDetectorCreate,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.faceLoopStart,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.objectLoopStart,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          controller.isRunning(),
-        ).toBe(true);
-      },
+    faceDetectorCreateMock.mockResolvedValue(
+      faceDetectorMock,
     );
 
-    it(
-      "does not start twice",
-      async () => {
-        const controller =
-          new CvProctoringController();
-
-        const video =
-          document.createElement(
-            "video",
-          );
-
-        await controller.start(
-          video,
-        );
-
-        await controller.start(
-          video,
-        );
-
-        expect(
-          mocks.cameraStart,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.faceDetectorCreate,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.objectDetectorCreate,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-      },
+    objectDetectorCreateMock.mockResolvedValue(
+      objectDetectorMock,
     );
 
-    it(
-      "stops both detection pipelines",
-      async () => {
-        const controller =
-          new CvProctoringController();
-
-        const video =
-          document.createElement(
-            "video",
-          );
-
-        await controller.start(
-          video,
-        );
-
-        controller.stop();
-
-        expect(
-          mocks.faceLoopStop,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.objectLoopStop,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.faceDetectorClose,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.objectDetectorClose,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          mocks.cameraStop,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
-
-        expect(
-          controller.isRunning(),
-        ).toBe(false);
-      },
+    faceLandmarkerCreateMock.mockResolvedValue(
+      faceLandmarkerMock,
     );
 
-    it(
-      "passes custom face confidence",
-      async () => {
-        const controller =
-          new CvProctoringController({
-            minDetectionConfidence:
-              0.7,
-          });
+    video =
+      document.createElement("video");
 
-        const video =
-          document.createElement(
-            "video",
-          );
+    controller =
+      new CvProctoringController();
+  });
 
-        await controller.start(
-          video,
-        );
+  /* ------------------------------------------------------------------------ */
+  /* Startup                                                                  */
+  /* ------------------------------------------------------------------------ */
 
-        expect(
-          mocks.faceDetectorCreate,
-        ).toHaveBeenCalledWith({
-          minDetectionConfidence:
-            0.7,
+  it(
+    "starts camera and both detection pipelines",
+    async () => {
+      await controller.start(video);
+
+      expect(
+        cameraMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        cameraMock.attachToVideo,
+      ).toHaveBeenCalledWith(video);
+
+      expect(
+        faceDetectorCreateMock,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        objectDetectorCreateMock,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceLandmarkerCreateMock,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceLoopMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        objectLoopMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        headPoseLoopMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        controller.isRunning(),
+      ).toBe(true);
+    },
+  );
+
+  it(
+    "does not start twice",
+    async () => {
+      await controller.start(video);
+
+      await controller.start(video);
+
+      expect(
+        cameraMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceDetectorCreateMock,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        objectDetectorCreateMock,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceLandmarkerCreateMock,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceLoopMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        objectLoopMock.start,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        headPoseLoopMock.start,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Stop                                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  it(
+    "stops both detection pipelines",
+    async () => {
+      await controller.start(video);
+
+      controller.stop();
+
+      expect(
+        faceLoopMock.stop,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        objectLoopMock.stop,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        headPoseLoopMock.stop,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceDetectorMock.close,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        objectDetectorMock.close,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        faceLandmarkerMock.close,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        cameraMock.stop,
+      ).toHaveBeenCalledTimes(1);
+
+      expect(
+        video.srcObject,
+      ).toBeNull();
+
+      expect(
+        controller.isRunning(),
+      ).toBe(false);
+    },
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Configuration                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  it(
+    "passes custom face confidence",
+    async () => {
+      controller =
+        new CvProctoringController({
+          minDetectionConfidence: 0.8,
         });
-      },
-    );
 
-    it(
-      "passes custom object settings",
-      async () => {
-        const controller =
-          new CvProctoringController({
-            objectDetectionConfidence:
-              0.6,
-            maxObjectResults: 3,
-          });
+      await controller.start(video);
 
-        const video =
-          document.createElement(
-            "video",
-          );
+      expect(
+        faceDetectorCreateMock,
+      ).toHaveBeenCalledWith({
+        minDetectionConfidence: 0.8,
+      });
 
-        await controller.start(
-          video,
-        );
+      expect(
+        faceLandmarkerCreateMock,
+      ).toHaveBeenCalledWith({
+        minFaceDetectionConfidence: 0.8,
+        minFacePresenceConfidence: 0.8,
+        minTrackingConfidence: 0.8,
+      });
+    },
+  );
 
-        expect(
-          mocks.objectDetectorCreate,
-        ).toHaveBeenCalledWith({
-          minDetectionConfidence:
-            0.6,
-          maxResults: 3,
+  it(
+    "passes custom object settings",
+    async () => {
+      controller =
+        new CvProctoringController({
+          objectDetectionConfidence: 0.7,
+          maxObjectResults: 10,
         });
-      },
-    );
 
-    it(
-      "reports candidate absent after persistence",
-      () => {
-        vi.useFakeTimers();
+      await controller.start(video);
 
-        const onViolation =
-          vi.fn();
+      expect(
+        objectDetectorCreateMock,
+      ).toHaveBeenCalledWith({
+        minDetectionConfidence: 0.7,
+        maxResults: 10,
+      });
+    },
+  );
 
-        const controller =
-          new CvProctoringController({
-            violationPersistenceMs:
-              2000,
-            callbacks: {
-              onViolation,
+  /* ------------------------------------------------------------------------ */
+  /* Candidate absent                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  it(
+    "reports candidate absent after persistence",
+    () => {
+      const violations: CvViolation[] =
+        [];
+
+      controller =
+        new CvProctoringController({
+          violationPersistenceMs: 2000,
+
+          callbacks: {
+            onViolation: (
+              violation,
+            ) => {
+              violations.push(
+                violation,
+              );
             },
-          });
+          },
+        });
 
-        const result: FaceDetectionResult =
+      const detectedAt =
+        new Date().toISOString();
+
+      controller.processDetection({
+        status: "NO_FACE",
+        faceCount: 0,
+        detectedAt,
+      });
+
+      expect(
+        violations,
+      ).toHaveLength(0);
+
+      const now =
+        Date.now();
+
+      vi.spyOn(
+        Date,
+        "now",
+      ).mockReturnValue(
+        now + 2001,
+      );
+
+      controller.processDetection({
+        status: "NO_FACE",
+        faceCount: 0,
+        detectedAt,
+      });
+
+      expect(
+        violations,
+      ).toHaveLength(1);
+
+      expect(
+        violations[0]?.type,
+      ).toBe(
+        "CANDIDATE_ABSENT",
+      );
+    },
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* One face                                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  it(
+    "does not report violation for one face",
+    () => {
+      const violations: CvViolation[] =
+        [];
+
+      controller =
+        new CvProctoringController({
+          violationPersistenceMs: 2000,
+
+          callbacks: {
+            onViolation: (
+              violation,
+            ) => {
+              violations.push(
+                violation,
+              );
+            },
+          },
+        });
+
+      controller.processDetection({
+        status: "ONE_FACE",
+        faceCount: 1,
+        detectedAt:
+          new Date().toISOString(),
+      });
+
+      expect(
+        violations,
+      ).toHaveLength(0);
+    },
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Multiple people                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  it(
+    "reports multiple people after persistence",
+    () => {
+      const violations: CvViolation[] =
+        [];
+
+      controller =
+        new CvProctoringController({
+          violationPersistenceMs: 2000,
+
+          callbacks: {
+            onViolation: (
+              violation,
+            ) => {
+              violations.push(
+                violation,
+              );
+            },
+          },
+        });
+
+      const detectedAt =
+        new Date().toISOString();
+
+      controller.processDetection({
+        status:
+          "MULTIPLE_FACES",
+        faceCount: 2,
+        detectedAt,
+      });
+
+      expect(
+        violations,
+      ).toHaveLength(0);
+
+      const now =
+        Date.now();
+
+      vi.spyOn(
+        Date,
+        "now",
+      ).mockReturnValue(
+        now + 2001,
+      );
+
+      controller.processDetection({
+        status:
+          "MULTIPLE_FACES",
+        faceCount: 2,
+        detectedAt,
+      });
+
+      expect(
+        violations,
+      ).toHaveLength(1);
+
+      expect(
+        violations[0]?.type,
+      ).toBe(
+        "MULTIPLE_PEOPLE",
+      );
+    },
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* Prohibited object                                                        */
+  /* ------------------------------------------------------------------------ */
+
+  it(
+    "reports prohibited object after persistence",
+    () => {
+      const violations: CvViolation[] =
+        [];
+
+      controller =
+        new CvProctoringController({
+          violationPersistenceMs: 2000,
+
+          callbacks: {
+            onViolation: (
+              violation,
+            ) => {
+              violations.push(
+                violation,
+              );
+            },
+          },
+        });
+
+      const detectedAt =
+        new Date().toISOString();
+
+      controller.processObjectDetection({
+        objects: [
           {
-            status:
-              "NO_FACE",
-            faceCount: 0,
-            detectedAt:
-              "2026-09-06T10:00:00.000Z",
-          };
+            label: "cell phone",
+            score: 0.95,
+          },
+        ],
+        detectedAt,
+      });
 
-        controller.processDetection(
-          result,
-        );
+      expect(
+        violations,
+      ).toHaveLength(0);
 
-        vi.advanceTimersByTime(
-          2000,
-        );
+      const now =
+        Date.now();
 
-        controller.processDetection(
-          result,
-        );
+      vi.spyOn(
+        Date,
+        "now",
+      ).mockReturnValue(
+        now + 2001,
+      );
 
-        expect(
-          onViolation,
-        ).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type:
-              "CANDIDATE_ABSENT",
-          }),
-        );
-      },
-    );
-
-    it(
-      "does not report violation for one face",
-      () => {
-        const onViolation =
-          vi.fn();
-
-        const controller =
-          new CvProctoringController({
-            callbacks: {
-              onViolation,
-            },
-          });
-
-        controller.processDetection({
-          status:
-            "ONE_FACE",
-          faceCount: 1,
-          detectedAt:
-            "2026-09-06T10:00:00.000Z",
-        });
-
-        expect(
-          onViolation,
-        ).not.toHaveBeenCalled();
-      },
-    );
-
-    it(
-      "reports multiple people after persistence",
-      () => {
-        vi.useFakeTimers();
-
-        const onViolation =
-          vi.fn();
-
-        const controller =
-          new CvProctoringController({
-            violationPersistenceMs:
-              2000,
-            callbacks: {
-              onViolation,
-            },
-          });
-
-        const result: FaceDetectionResult =
+      controller.processObjectDetection({
+        objects: [
           {
-            status:
-              "MULTIPLE_FACES",
-            faceCount: 2,
-            detectedAt:
-              "2026-09-06T10:00:00.000Z",
-          };
+            label: "cell phone",
+            score: 0.95,
+          },
+        ],
+        detectedAt,
+      });
 
-        controller.processDetection(
-          result,
-        );
+      expect(
+        violations,
+      ).toHaveLength(1);
 
-        vi.advanceTimersByTime(
-          2000,
-        );
+      expect(
+        violations[0]?.type,
+      ).toBe(
+        "PROHIBITED_OBJECT",
+      );
+    },
+  );
 
-        controller.processDetection(
-          result,
-        );
+  /* ------------------------------------------------------------------------ */
+  /* Object disappears                                                        */
+  /* ------------------------------------------------------------------------ */
 
-        expect(
-          onViolation,
-        ).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type:
-              "MULTIPLE_PEOPLE",
-          }),
-        );
-      },
-    );
+  it(
+    "does not report a phone if it disappears",
+    () => {
+      const violations: CvViolation[] =
+        [];
 
-    it(
-      "reports prohibited object after persistence",
-      () => {
-        vi.useFakeTimers();
+      controller =
+        new CvProctoringController({
+          violationPersistenceMs: 2000,
 
-        const onViolation =
-          vi.fn();
-
-        const controller =
-          new CvProctoringController({
-            violationPersistenceMs:
-              2000,
-            callbacks: {
-              onViolation,
+          callbacks: {
+            onViolation: (
+              violation,
+            ) => {
+              violations.push(
+                violation,
+              );
             },
-          });
+          },
+        });
 
-        mocks.detectProhibitedObjects.mockReturnValue(
-          [
-            {
-              type:
-                "CELL_PHONE",
-              label:
-                "cell phone",
-              score: 0.91,
-            },
-          ],
-        );
-
-        const result:
-          ObjectDetectionResult =
+      controller.processObjectDetection({
+        objects: [
           {
-            objects: [
-              {
-                label:
-                  "cell phone",
-                score: 0.91,
-              },
-            ],
-            detectedAt:
-              "2026-09-06T10:00:00.000Z",
-          };
+            label: "cell phone",
+            score: 0.95,
+          },
+        ],
+        detectedAt:
+          new Date().toISOString(),
+      });
 
-        controller.processObjectDetection(
-          result,
-        );
+      controller.processObjectDetection({
+        objects: [],
+        detectedAt:
+          new Date().toISOString(),
+      });
 
-        vi.advanceTimersByTime(
-          2000,
-        );
-
-        controller.processObjectDetection(
-          result,
-        );
-
-        expect(
-          onViolation,
-        ).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type:
-              "PROHIBITED_OBJECT",
-            metadata:
-              expect.objectContaining({
-                objectType:
-                  "cell phone",
-                confidence: 0.91,
-              }),
-          }),
-        );
-      },
-    );
-
-    it(
-      "does not report a phone if it disappears",
-      () => {
-        vi.useFakeTimers();
-
-        const onViolation =
-          vi.fn();
-
-        const controller =
-          new CvProctoringController({
-            violationPersistenceMs:
-              2000,
-            callbacks: {
-              onViolation,
-            },
-          });
-
-        mocks.detectProhibitedObjects
-          .mockReturnValueOnce([
-            {
-              type:
-                "CELL_PHONE",
-              label:
-                "cell phone",
-              score: 0.9,
-            },
-          ])
-          .mockReturnValueOnce([])
-          .mockReturnValueOnce([
-            {
-              type:
-                "CELL_PHONE",
-              label:
-                "cell phone",
-              score: 0.9,
-            },
-          ]);
-
-        controller.processObjectDetection({
-          objects: [
-            {
-              label:
-                "cell phone",
-              score: 0.9,
-            },
-          ],
-          detectedAt:
-            "2026-09-06T10:00:00.000Z",
-        });
-
-        vi.advanceTimersByTime(
-          1000,
-        );
-
-        controller.processObjectDetection({
-          objects: [],
-          detectedAt:
-            "2026-09-06T10:00:01.000Z",
-        });
-
-        vi.advanceTimersByTime(
-          1000,
-        );
-
-        controller.processObjectDetection({
-          objects: [
-            {
-              label:
-                "cell phone",
-              score: 0.9,
-            },
-          ],
-          detectedAt:
-            "2026-09-06T10:00:02.000Z",
-        });
-
-        expect(
-          onViolation,
-        ).not.toHaveBeenCalled();
-      },
-    );
-  },
-);
+      expect(
+        violations,
+      ).toHaveLength(0);
+    },
+  );
+});

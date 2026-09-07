@@ -31,7 +31,8 @@ export interface FaceDetectionLoopOptions {
 export type CvViolationType =
   | "CANDIDATE_ABSENT"
   | "MULTIPLE_PEOPLE"
-  | "PROHIBITED_OBJECT";
+  | "PROHIBITED_OBJECT"
+  | "LOOKING_AWAY";
 
 export interface CvViolation {
   type: CvViolationType;
@@ -40,6 +41,8 @@ export interface CvViolation {
     faceCount?: number;
     objectType?: string;
     confidence?: number;
+    yaw?: number;
+    pitch?: number;
   };
 }
 
