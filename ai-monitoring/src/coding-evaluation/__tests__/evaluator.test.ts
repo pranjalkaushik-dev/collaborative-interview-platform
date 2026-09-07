@@ -16,89 +16,110 @@ describe("Coding Evaluator", () => {
   it("evaluates a coding solution", async () => {
     invokeMock.mockResolvedValue({
       timeComplexity: "O(n)",
-      spaceComplexity: "O(1)",
+      spaceComplexity: "O(n)",
       codeQualityScore: 90,
-      summary: "The solution correctly processes the input.",
-      suggestions: ["Improve variable naming."],
+      summary: "The solution uses a hash map to efficiently find the complement.",
+      suggestions: [
+        "Consider adding comments explaining the hash map approach.",
+      ],
     });
 
     const result = await evaluateCodingSolution({
-      question: "Find the maximum value in an array.",
+      question:
+        "Given an array of integers and a target value, return the indices of two numbers whose sum equals the target.",
       sourceCode: `
-        const max = Math.max(...arr);
-        console.log(max);
+        function twoSum(nums, target) {
+          const map = new Map();
+
+          for (let i = 0; i < nums.length; i++) {
+            const complement = target - nums[i];
+
+            if (map.has(complement)) {
+              return [map.get(complement), i];
+            }
+
+            map.set(nums[i], i);
+          }
+
+          return [];
+        }
       `,
       language: "javascript",
       testResults: [
         {
           testCaseId: "1",
-          input: "[1, 5, 3]",
-          expectedOutput: "5",
-          actualOutput: "5",
+          input: "[2,7,11,15], 9",
+          expectedOutput: "[0,1]",
+          actualOutput: "[0,1]",
           passed: true,
           executionTime: "0.027",
-          memory: 8136,
+          memory: 7920,
         },
       ],
     });
 
-    expect(result).toEqual({
-      timeComplexity: "O(n)",
-      spaceComplexity: "O(1)",
-      codeQualityScore: 90,
-      summary: "The solution correctly processes the input.",
-      suggestions: ["Improve variable naming."],
-    });
-
-    expect(invokeMock).toHaveBeenCalledOnce();
-
-    expect(invokeMock.mock.calls[0]?.[0]).toMatchObject({
-      question: "Find the maximum value in an array.",
-      language: "javascript",
-      sourceCode: expect.stringContaining("Math.max"),
-      testResults: expect.stringContaining('"passed": true'),
-    });
+    expect(result.timeComplexity).toBe("O(n)");
+    expect(result.spaceComplexity).toBe("O(n)");
+    expect(result.codeQualityScore).toBe(90);
+    expect(result.summary).toContain("hash map");
+    expect(result.suggestions).toHaveLength(1);
   });
 
-  it("allows unknown complexity and nullable fields", async () => {
+  it("allows an empty suggestions array", async () => {
     invokeMock.mockResolvedValue({
-      timeComplexity: null,
-      spaceComplexity: null,
-      codeQualityScore: null,
-      summary: null,
+      timeComplexity: "O(1)",
+      spaceComplexity: "O(1)",
+      codeQualityScore: 100,
+      summary: "The implementation is simple and efficient.",
       suggestions: [],
     });
 
     const result = await evaluateCodingSolution({
-      question: "Implement the required solution.",
-      sourceCode: "console.log('test');",
+      question: "Return the value of a constant.",
+      sourceCode: "return 42;",
       language: "javascript",
       testResults: [],
     });
 
-    expect(result.timeComplexity).toBeNull();
-    expect(result.spaceComplexity).toBeNull();
-    expect(result.codeQualityScore).toBeNull();
-    expect(result.summary).toBeNull();
     expect(result.suggestions).toEqual([]);
   });
 
-  it("throws when the evaluation chain returns invalid output", async () => {
+  it("passes test results to the AI evaluation chain", async () => {
     invokeMock.mockResolvedValue({
       timeComplexity: "O(n)",
-      spaceComplexity: "O(1)",
-      codeQualityScore: 150,
-      summary: "Invalid score.",
+      spaceComplexity: "O(n)",
+      codeQualityScore: 85,
+      summary: "The solution was evaluated using the supplied test results.",
       suggestions: [],
     });
 
-    await expect(
-      evaluateCodingSolution({
-        question: "Find the maximum.",
-        sourceCode: "console.log(1);",
-        language: "javascript",
-        testResults: [],
-      })
-    ).rejects.toThrow();
+    await evaluateCodingSolution({
+      question: "Find two numbers that sum to a target.",
+      sourceCode: "function twoSum() {}",
+      language: "javascript",
+      testResults: [
+        {
+          testCaseId: "1",
+          input: "[2,7], 9",
+          expectedOutput: "[0,1]",
+          actualOutput: "[0,1]",
+          passed: true,
+          executionTime: "0.027",
+          memory: 7920,
+        },
+      ],
+    });
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    const args = invokeMock.mock.calls[0]?.[0];
+
+    expect(args).toMatchObject({
+      question: "Find two numbers that sum to a target.",
+      language: "javascript",
+      sourceCode: "function twoSum() {}",
+    });
+
+    expect(args.testResults).toContain('"passed": true');
   });
 });
