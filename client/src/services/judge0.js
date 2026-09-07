@@ -6,6 +6,23 @@
 const JUDGE0_PUBLIC_API = 'https://ce.judge0.com';
 const BACKEND_API = 'http://localhost:5000/api/coding/run';
 
+const safeB64Encode = (str) => {
+  try {
+    return btoa(unescape(encodeURIComponent(str || '')));
+  } catch (e) {
+    return '';
+  }
+};
+
+const safeB64Decode = (str) => {
+  if (!str) return '';
+  try {
+    return decodeURIComponent(escape(atob(str)));
+  } catch (e) {
+    return str;
+  }
+};
+
 /**
  * Execute source code using Judge0
  * @param {Object} params
@@ -40,17 +57,20 @@ export const executeCode = async ({ languageId, sourceCode, stdin = '' }) => {
     console.warn('[Backend Execution Proxy unreachable, falling back to direct Judge0 CE]:', err.message);
   }
 
-  // Fallback: Direct call to public Judge0 CE endpoint
+  // Fallback: Direct call to public Judge0 CE endpoint with base64
   try {
-    const response = await fetch(`${JUDGE0_PUBLIC_API}/submissions?base64_encoded=false&wait=true`, {
+    const encodedSource = safeB64Encode(sourceCode);
+    const encodedStdin = safeB64Encode(stdin);
+
+    const response = await fetch(`${JUDGE0_PUBLIC_API}/submissions?base64_encoded=true&wait=true`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         language_id: languageId,
-        source_code: sourceCode,
-        stdin: stdin || ''
+        source_code: encodedSource,
+        stdin: encodedStdin
       })
     });
 
@@ -62,14 +82,14 @@ export const executeCode = async ({ languageId, sourceCode, stdin = '' }) => {
     const resData = await response.json();
 
     return {
-      stdout: resData.stdout || '',
-      stderr: resData.stderr || '',
-      compileOutput: resData.compile_output || '',
+      stdout: safeB64Decode(resData.stdout),
+      stderr: safeB64Decode(resData.stderr),
+      compileOutput: safeB64Decode(resData.compile_output),
       status: resData.status || { description: 'Completed' },
       time: resData.time || '0.0',
       memory: resData.memory || 0,
       exitCode: resData.exit_code,
-      message: resData.message || '',
+      message: safeB64Decode(resData.message),
       via: 'Direct Judge0 CE Cloud'
     };
   } catch (error) {

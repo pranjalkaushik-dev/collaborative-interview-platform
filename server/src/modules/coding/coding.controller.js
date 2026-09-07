@@ -7,8 +7,17 @@ const { sendSuccess, sendError } = require('../../shared/utils/response.utils');
 const JUDGE0_BASE_URL = process.env.JUDGE0_API_URL || 'https://ce.judge0.com';
 const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY || null;
 
+const decodeBase64 = (str) => {
+  if (!str) return '';
+  try {
+    return Buffer.from(str, 'base64').toString('utf-8');
+  } catch (e) {
+    return str;
+  }
+};
+
 /**
- * Execute code using Judge0 compiler API
+ * Execute code using Judge0 compiler API with Base64 encoding
  * POST /api/coding/run
  */
 const runCode = async (req, res) => {
@@ -28,13 +37,17 @@ const runCode = async (req, res) => {
       headers['X-RapidAPI-Host'] = 'judge0-ce.p.rapidapi.com';
     }
 
-    const response = await fetch(`${JUDGE0_BASE_URL}/submissions?base64_encoded=false&wait=true`, {
+    // Base64 encode source code and stdin to support all UTF-8 characters and GCC symbols safely
+    const encodedSource = Buffer.from(sourceCode, 'utf-8').toString('base64');
+    const encodedStdin = stdin ? Buffer.from(stdin, 'utf-8').toString('base64') : '';
+
+    const response = await fetch(`${JUDGE0_BASE_URL}/submissions?base64_encoded=true&wait=true`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        source_code: sourceCode,
+        source_code: encodedSource,
         language_id: Number(languageId),
-        stdin: stdin || ''
+        stdin: encodedStdin
       })
     });
 
@@ -45,10 +58,14 @@ const runCode = async (req, res) => {
 
     const result = await response.json();
 
+    const stdout = decodeBase64(result.stdout);
+    const stderr = decodeBase64(result.stderr);
+    const compileOutput = decodeBase64(result.compile_output);
+
     return sendSuccess(res, 200, 'Code executed successfully', {
-      stdout: result.stdout || '',
-      stderr: result.stderr || '',
-      compileOutput: result.compile_output || '',
+      stdout,
+      stderr,
+      compileOutput,
       status: result.status || {},
       time: result.time || '0.0',
       memory: result.memory || 0,
