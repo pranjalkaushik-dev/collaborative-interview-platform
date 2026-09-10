@@ -1,0 +1,56 @@
+/* DevArena — Global Base Styles */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Allow scroll on public pages (landing, login); room pages handle their own overflow */
+@layer base {
+  html, body {
+    @apply bg-arena-bg text-arena-text;
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #222f46;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2e3d5b;
+  }
+
+  /* Selection color */
+  ::selection {
+    background: rgba(59, 130, 246, 0.3);
+    color: #f1f5f9;
+  }
+}
+
+/* Code editor font utility */
+@layer utilities {
+  .code-editor-font {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Cascadia Code', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    tab-size: 2;
+  }
+}
