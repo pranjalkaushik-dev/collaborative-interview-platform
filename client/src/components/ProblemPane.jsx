@@ -30,7 +30,11 @@ export const ProblemPane = ({ problem, isCollapsed, onToggleCollapse }) => {
           <span className={`difficulty-badge diff-${problem.difficulty.toLowerCase()}`}>
             {problem.difficulty}
           </span>
+<<<<<<< HEAD
           <span className="tag-badge">Technical Interview</span>
+=======
+          <span className="tag-badge">Batch B-2 Interview</span>
+>>>>>>> origin/feature/collaborative-coding
           <span className="tag-badge">Data Structures</span>
         </div>
       </div>

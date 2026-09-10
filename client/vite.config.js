@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+<<<<<<< HEAD
   server: {
     proxy: {
       // Forward /api/* to backend server at port 5000
@@ -14,4 +15,6 @@ export default defineConfig({
       },
     },
   },
+=======
+>>>>>>> origin/feature/collaborative-coding
 })

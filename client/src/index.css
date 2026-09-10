@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /* DevArena — Global Base Styles */
 @tailwind base;
 @tailwind components;
@@ -53,4 +54,14 @@
     line-height: 1.6;
     tab-size: 2;
   }
+=======
+/* Reset default margins and enable full-screen layout */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+>>>>>>> origin/feature/collaborative-coding
 }

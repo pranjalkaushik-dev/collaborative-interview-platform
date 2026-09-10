@@ -1,5 +1,12 @@
+<<<<<<< HEAD
 const Submission = require('./submission.model');
 const Interview = require('../interviews/interview.model');
+=======
+/**
+ * Coding Controller - Judge0 Code Execution
+ * Lead: Nitesh (Code Editor & Execution Lead)
+ */
+>>>>>>> origin/feature/collaborative-coding
 const { sendSuccess, sendError } = require('../../shared/utils/response.utils');
 
 const JUDGE0_BASE_URL = process.env.JUDGE0_API_URL || 'https://ce.judge0.com';
@@ -26,12 +33,23 @@ const runCode = async (req, res) => {
       return sendError(res, 400, 'sourceCode and languageId are required');
     }
 
+<<<<<<< HEAD
     const headers = { 'Content-Type': 'application/json' };
+=======
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+>>>>>>> origin/feature/collaborative-coding
     if (JUDGE0_API_KEY) {
       headers['X-RapidAPI-Key'] = JUDGE0_API_KEY;
       headers['X-RapidAPI-Host'] = 'judge0-ce.p.rapidapi.com';
     }
 
+<<<<<<< HEAD
+=======
+    // Base64 encode source code and stdin to support all UTF-8 characters and GCC symbols safely
+>>>>>>> origin/feature/collaborative-coding
     const encodedSource = Buffer.from(sourceCode, 'utf-8').toString('base64');
     const encodedStdin = stdin ? Buffer.from(stdin, 'utf-8').toString('base64') : '';
 
@@ -46,8 +64,13 @@ const runCode = async (req, res) => {
     });
 
     if (!response.ok) {
+<<<<<<< HEAD
       const errorText = await response.text();
       return sendError(res, response.status, 'Judge0 execution error', errorText);
+=======
+      const errText = await response.text();
+      return sendError(res, response.status, `Judge0 execution failed: ${errText}`);
+>>>>>>> origin/feature/collaborative-coding
     }
 
     const result = await response.json();
@@ -63,14 +86,24 @@ const runCode = async (req, res) => {
       status: result.status || {},
       time: result.time || '0.0',
       memory: result.memory || 0,
+<<<<<<< HEAD
       exitCode: result.exit_code
     });
   } catch (error) {
     return sendError(res, 500, error.message);
+=======
+      exitCode: result.exit_code,
+      exitSignal: result.exit_signal
+    });
+  } catch (error) {
+    console.error('[Judge0 Execution Error]:', error.message);
+    return sendError(res, 500, `Execution server error: ${error.message}`);
+>>>>>>> origin/feature/collaborative-coding
   }
 };
 
 /**
+<<<<<<< HEAD
  * Submit code for final evaluation, store in MongoDB, and attach to AI Pipeline
  * POST /api/coding/submit
  */
@@ -142,16 +175,28 @@ const submitCode = async (req, res) => {
 
 /**
  * Get supported Judge0 language IDs
+=======
+ * Supported Language Mapping
+>>>>>>> origin/feature/collaborative-coding
  * GET /api/coding/languages
  */
 const getSupportedLanguages = (req, res) => {
   const languages = [
+<<<<<<< HEAD
     { id: 71, name: 'Python (3.8.1)' },
     { id: 54, name: 'C++ (GCC 9.2.0)' },
     { id: 62, name: 'Java (OpenJDK 13.0.1)' },
     { id: 63, name: 'JavaScript (Node.js 12.14.0)' },
     { id: 73, name: 'Rust (1.40.0)' },
     { id: 60, name: 'Go (1.13.5)' }
+=======
+    { id: 71, name: 'Python (3.8.1)', monacoLang: 'python', extension: 'py' },
+    { id: 63, name: 'JavaScript (Node.js 12.14.0)', monacoLang: 'javascript', extension: 'js' },
+    { id: 74, name: 'TypeScript (3.7.4)', monacoLang: 'typescript', extension: 'ts' },
+    { id: 54, name: 'C++ (GCC 9.2.0)', monacoLang: 'cpp', extension: 'cpp' },
+    { id: 62, name: 'Java (OpenJDK 13.0.1)', monacoLang: 'java', extension: 'java' },
+    { id: 50, name: 'C (GCC 9.2.0)', monacoLang: 'c', extension: 'c' }
+>>>>>>> origin/feature/collaborative-coding
   ];
 
   return sendSuccess(res, 200, 'Supported languages retrieved', { languages });
@@ -159,6 +204,9 @@ const getSupportedLanguages = (req, res) => {
 
 module.exports = {
   runCode,
+<<<<<<< HEAD
   submitCode,
+=======
+>>>>>>> origin/feature/collaborative-coding
   getSupportedLanguages
 };
